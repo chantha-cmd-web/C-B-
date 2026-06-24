@@ -7,25 +7,24 @@ import {
   setDoc as fsSetDoc,
   deleteDoc as fsDeleteDoc,
   Timestamp,
-  DocumentData,
-  QuerySnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
-function snapshotToArray<T>(snapshot: QuerySnapshot<DocumentData>): (T & { id: string })[] {
+function snapshotToArray<T>(snapshot: any): (T & { id: string })[] {
   const arr: (T & { id: string })[] = [];
-  snapshot.forEach((d) => {
+  snapshot.forEach((d: any) => {
     arr.push({ id: d.id, ...d.data() } as T & { id: string });
   });
   return arr;
 }
 
-export async function addDoc<T>(_collection: string, _data: T): Promise<{ id: string }> {
-  throw new Error('Use setDoc with a generated id instead');
-}
+/* ---------- public CRUD API ---------- */
 
 export async function setDoc(collectionName: string, id: string, data: unknown): Promise<void> {
-  await fsSetDoc(doc(db, collectionName, id), { ...(data as Record<string, unknown>), timestamp: Timestamp.now().toMillis() });
+  await fsSetDoc(doc(db, collectionName, id), {
+    ...(data as Record<string, unknown>),
+    timestamp: Timestamp.now().toMillis(),
+  });
 }
 
 export async function getDocs<T>(collectionName: string): Promise<(T & { id: string })[]> {
@@ -33,63 +32,118 @@ export async function getDocs<T>(collectionName: string): Promise<(T & { id: str
   return snapshotToArray<T>(snapshot);
 }
 
-export async function getDoc<T>(collectionName: string, id: string): Promise<T & { id: string }> {
-  const d = await fsGetDocs(collection(db, collectionName));
-  const found = snapshotToArray<T>(d).find((item) => item.id === id);
-  if (!found) throw new Error('Document not found');
-  return found;
-}
-
 export async function deleteDoc(collectionName: string, id: string): Promise<void> {
   await fsDeleteDoc(doc(db, collectionName, id));
 }
 
+/* ---------- reactive collection hook ---------- */
+
+type CollectionState<T> = { data: T[]; connected: boolean };
+
+const store = new Map<string, CollectionState<any>>();
+const listeners = new Map<string, Set<() => void>>();
+
+function notify(collectionName: string) {
+  const set = listeners.get(collectionName);
+  if (set) set.forEach((fn) => fn());
+}
+
+function subscribe(collectionName: string, fn: () => void) {
+  if (!listeners.has(collectionName)) listeners.set(collectionName, new Set());
+  listeners.get(collectionName)!.add(fn);
+  return () => {
+    const s = listeners.get(collectionName);
+    if (s) s.delete(fn);
+    if (s && s.size === 0) listeners.delete(collectionName);
+  };
+}
+
+async function fetchAndSet(collectionName: string) {
+  try {
+    const docs = await getDocs(collectionName);
+    store.set(collectionName, { data: docs, connected: true });
+  } catch {
+    const existing = store.get(collectionName);
+    store.set(collectionName, { data: existing?.data || [], connected: false });
+  }
+  notify(collectionName);
+}
+
 export function useRealtimeCollection<T>(collectionName: string) {
-  const [data, setData] = useState<T[]>([]);
-  const [connected, setConnected] = useState(false);
-  const syncedRef = useRef(false);
+  const syncId = useRef(0);
+  const [state, setState] = useState<CollectionState<T>>(() => {
+    if (!store.has(collectionName)) {
+      store.set(collectionName, { data: [], connected: false });
+      fetchAndSet(collectionName);
+    }
+    return store.get(collectionName) as CollectionState<T>;
+  });
 
   useEffect(() => {
-    const unsub = onSnapshot(
+    const unsubStore = subscribe(collectionName, () => {
+      setState({ ...(store.get(collectionName) as CollectionState<T>) });
+    });
+
+    const id = ++syncId.current;
+
+    const unsubSnapshot = onSnapshot(
       collection(db, collectionName),
       (snapshot) => {
-        setData(snapshotToArray<T>(snapshot) as unknown as T[]);
-        setConnected(true);
-        syncedRef.current = true;
+        if (id !== syncId.current) return;
+        const docs = snapshotToArray<T>(snapshot);
+        store.set(collectionName, { data: docs, connected: true });
+        setState({ data: docs, connected: true });
       },
-      () => {
-        setConnected(false);
+      (err) => {
+        console.error(`Firestore onSnapshot error [${collectionName}]:`, err);
+        if (id !== syncId.current) return;
+        const existing = store.get(collectionName);
+        store.set(collectionName, { data: existing?.data || [], connected: false });
+        setState({ data: existing?.data || [], connected: false });
       }
     );
 
-    const connTimer = setTimeout(() => {
-      if (!syncedRef.current) setConnected(false);
-    }, 5000);
+    fetchAndSet(collectionName);
 
     return () => {
-      unsub();
-      clearTimeout(connTimer);
+      unsubStore();
+      unsubSnapshot();
     };
   }, [collectionName]);
 
-  return { data, connected };
+  return state;
 }
+
+/* ---------- sync status hook ---------- */
 
 export function useSyncStatus() {
   const [status, setStatus] = useState<'connected' | 'disconnected' | 'syncing'>('syncing');
   const [lastSync, setLastSync] = useState('');
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setStatus('connected');
-      setLastSync(new Date().toLocaleTimeString());
-    }, 3000);
+    const check = () => {
+      const collections = ['resignations', 'nssf', 'donations', 'users', 'telegramSettings'];
+      const allConnected = collections.every((c) => store.get(c)?.connected);
+      const anyData = collections.some((c) => (store.get(c)?.data.length ?? 0) > 0);
+      if (allConnected) {
+        setStatus('connected');
+        setLastSync(new Date().toLocaleTimeString());
+      } else if (anyData) {
+        setStatus('connected');
+      } else {
+        setStatus('syncing');
+      }
+    };
+    check();
+    const interval = setInterval(check, 3000);
     return () => clearInterval(interval);
   }, []);
 
   return { status, lastSync };
 }
 
-export function refetchCollection(_collection: string): Promise<void> {
-  return Promise.resolve();
+/* ---------- force re-fetch ---------- */
+
+export function refetchCollection(collectionName: string): Promise<void> {
+  return fetchAndSet(collectionName);
 }
