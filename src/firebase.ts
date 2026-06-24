@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref, getBlob } from 'firebase/storage';
+import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyC_SjrFs-PvlTYpiOgI3Spl4FpRz36zD5M',
@@ -12,6 +13,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const storage = getStorage(app);
+export const db = getFirestore(app);
 
 async function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
