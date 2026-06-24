@@ -28,7 +28,7 @@ export async function setDoc(collectionName: string, id: string, data: unknown):
 }
 
 export async function getDocs<T>(collectionName: string): Promise<(T & { id: string })[]> {
-  const snapshot = await fsGetDocs(collection(db, collectionName));
+  const snapshot = await fsGetDocs(collection(db, collectionName), { source: 'server' });
   return snapshotToArray<T>(snapshot);
 }
 
@@ -62,7 +62,8 @@ async function fetchAndSet(collectionName: string) {
   try {
     const docs = await getDocs(collectionName);
     store.set(collectionName, { data: docs, connected: true });
-  } catch {
+  } catch (err) {
+    console.error(`Firestore fetch error [${collectionName}]:`, err);
     const existing = store.get(collectionName);
     store.set(collectionName, { data: existing?.data || [], connected: false });
   }
