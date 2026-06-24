@@ -1,0 +1,6 @@
+{
+  "name": "Compensation and Benefits Management System",
+  "description": "Compensation and Benefits Management System with real-time sync across connected devices, tracking resignations, NSSF contributions, and donations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

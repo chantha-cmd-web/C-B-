@@ -1,0 +1,109 @@
+{
+  "entities": {
+    "Resignation": {
+      "title": "Resignation Record",
+      "description": "Details about a staff resignation and clearance status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the record" },
+        "staffId": { "type": "string", "description": "Staff ID of the resigned staff member" },
+        "name": { "type": "string", "description": "Full name of the staff member" },
+        "nationality": { "type": "string", "description": "Nationality of the staff member" },
+        "campus": { "type": "string", "description": "Campus designation of the staff member" },
+        "department": { "type": "string", "description": "Department of the staff member" },
+        "position": { "type": "string", "description": "Position held by the staff member" },
+        "status": { "type": "string", "description": "Employment status (e.g., Full-time, Part-time)" },
+        "reason": { "type": "string", "description": "Reason for leaving (e.g., Resign, Terminate)" },
+        "start": { "type": "string", "description": "Start date of employment" },
+        "end": { "type": "string", "description": "Last working day" },
+        "clearance": { "type": "string", "description": "Clearance status ('Yes' for cleared, 'No' for pending)" },
+        "filename": { "type": "string", "description": "Name of the uploaded PDF file" },
+        "fileData": { "type": "string", "description": "Base64-encoded PDF or file URL string" },
+        "timestamp": { "type": "integer", "description": "Unix timestamp of update" }
+      },
+      "required": ["id", "staffId", "name", "campus", "department", "position", "start", "end", "clearance"]
+    },
+    "Nssf": {
+      "title": "NSSF Upload Record",
+      "description": "Monthly NSSF contribution records and uploads",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "month": { "type": "string", "description": "Month of contribution" },
+        "year": { "type": "integer", "description": "Year of contribution" },
+        "staff": { "type": "integer", "description": "Number of active staff contributes" },
+        "amount": { "type": "number", "description": "Total contribution amount in USD" },
+        "filename": { "type": "string", "description": "PDF filename of NSSF document" },
+        "fileData": { "type": "string", "description": "Base64 payload of NSSF PDF" },
+        "timestamp": { "type": "integer", "description": "Unix timestamp of update" }
+      },
+      "required": ["id", "month", "year", "staff", "amount"]
+    },
+    "Donation": {
+      "title": "Donation Record",
+      "description": "Donation record of staff members on special events",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "staffId": { "type": "string", "description": "ID of donating staff member" },
+        "name": { "type": "string", "description": "Name of donating staff member" },
+        "campus": { "type": "string", "description": "Campus of donating staff member" },
+        "status": { "type": "string", "description": "Status of the staff member" },
+        "type": { "type": "string", "description": "Type of event (Wedding, Funeral, Maternity, etc.)" },
+        "amount": { "type": "number", "description": "Donation amount in USD" },
+        "date": { "type": "string", "description": "Date of the donation event" },
+        "filename": { "type": "string", "description": "Filename of PDF proof" },
+        "fileData": { "type": "string", "description": "Base64 PDF proof representation" },
+        "timestamp": { "type": "integer", "description": "Unix timestamp of update" }
+      },
+      "required": ["id", "staffId", "name", "campus", "type", "amount", "date"]
+    },
+    "TelegramSettings": {
+      "title": "Telegram Configuration",
+      "description": "Channel backup configuration settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "token": { "type": "string" },
+        "chatId": { "type": "string" },
+        "fileName": { "type": "string" }
+      },
+      "required": ["id"]
+    },
+    "User": {
+      "title": "System User",
+      "description": "Internal login account details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "fullname": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["id", "username", "fullname", "password", "role"]
+    }
+  },
+  "firestore": {
+    "resignations": {
+      "schema": "Resignation",
+      "description": "List of active resignation and clearance status records"
+    },
+    "nssf": {
+      "schema": "Nssf",
+      "description": "Monthly NSSF receipts"
+    },
+    "donations": {
+      "schema": "Donation",
+      "description": "List of staff wedding, funeral, and maternity donations"
+    },
+    "telegramSettings": {
+      "schema": "TelegramSettings",
+      "description": "Config parameters for Telegram channels"
+    },
+    "users": {
+      "schema": "User",
+      "description": "Login users registered to this system"
+    }
+  }
+}
