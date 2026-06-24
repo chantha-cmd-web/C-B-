@@ -35,28 +35,6 @@ function decodeValue(value: any): any {
   return null;
 }
 
-function encodeValue(value: any): any {
-  if (value === null || value === undefined) return { nullValue: null };
-  if (typeof value === 'string') return { stringValue: value };
-  if (typeof value === 'number') {
-    if (Number.isInteger(value)) return { integerValue: String(value) };
-    return { doubleValue: value };
-  }
-  if (typeof value === 'boolean') return { booleanValue: value };
-  if (Array.isArray(value)) return { arrayValue: { values: value.map(encodeValue) } };
-  if (typeof value === 'object') return { mapValue: { fields: encodeFields(value) } };
-  return { nullValue: null };
-}
-
-function encodeFields(obj: any): any {
-  const fields: any = {};
-  for (const key of Object.keys(obj)) {
-    const val = obj[key];
-    if (val !== undefined && val !== null) fields[key] = encodeValue(val);
-  }
-  return fields;
-}
-
 function extractId(name: string): string {
   const parts = name.split('/');
   return parts[parts.length - 1];
