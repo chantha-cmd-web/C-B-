@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   collection,
   doc,
@@ -18,113 +18,78 @@ function snapshotToArray<T>(snapshot: any): (T & { id: string })[] {
   return arr;
 }
 
-/* ---------- public CRUD API ---------- */
-
 export async function setDoc(collectionName: string, id: string, data: unknown): Promise<void> {
+  console.log(`FIREBASE: setDoc ${collectionName}/${id}`, data);
   await fsSetDoc(doc(db, collectionName, id), {
     ...(data as Record<string, unknown>),
     timestamp: Timestamp.now().toMillis(),
   });
+  console.log(`FIREBASE: setDoc ${collectionName}/${id} SUCCESS`);
 }
 
 export async function getDocs<T>(collectionName: string): Promise<(T & { id: string })[]> {
+  console.log(`FIREBASE: getDocs ${collectionName}`);
   const snapshot = await fsGetDocs(collection(db, collectionName), { source: 'server' });
-  return snapshotToArray<T>(snapshot);
+  const result = snapshotToArray<T>(snapshot);
+  console.log(`FIREBASE: getDocs ${collectionName} returned ${result.length} docs`);
+  return result;
 }
 
 export async function deleteDoc(collectionName: string, id: string): Promise<void> {
+  console.log(`FIREBASE: deleteDoc ${collectionName}/${id}`);
   await fsDeleteDoc(doc(db, collectionName, id));
 }
 
-/* ---------- reactive collection hook with shared polling ---------- */
-
-type CollectionState<T> = { data: T[]; connected: boolean; error: string };
-
-const store = new Map<string, CollectionState<any>>();
-const listeners = new Map<string, Set<() => void>>();
-const pollTimers = new Map<string, ReturnType<typeof setInterval>>();
-
-function notify(collectionName: string) {
-  const set = listeners.get(collectionName);
-  if (set) set.forEach((fn) => fn());
-}
-
-function subscribe(collectionName: string, fn: () => void) {
-  if (!listeners.has(collectionName)) listeners.set(collectionName, new Set());
-  listeners.get(collectionName)!.add(fn);
-  return () => {
-    const s = listeners.get(collectionName);
-    if (s) s.delete(fn);
-    if (s && s.size === 0) listeners.delete(collectionName);
-  };
-}
-
-async function fetchAndSet(collectionName: string) {
-  try {
-    const docs = await getDocs(collectionName);
-    store.set(collectionName, { data: docs, connected: true, error: '' });
-  } catch (err) {
-    const msg = String(err);
-    console.error(`Firestore fetch error [${collectionName}]:`, err);
-    const existing = store.get(collectionName);
-    store.set(collectionName, { data: existing?.data || [], connected: false, error: msg });
-  }
-  notify(collectionName);
-}
-
-function startPolling(collectionName: string) {
-  if (pollTimers.has(collectionName)) return;
-  fetchAndSet(collectionName);
-  pollTimers.set(collectionName, setInterval(() => fetchAndSet(collectionName), 2000));
-}
-
-function stopPollingIfEmpty(collectionName: string) {
-  const set = listeners.get(collectionName);
-  if (!set || set.size === 0) {
-    const timer = pollTimers.get(collectionName);
-    if (timer) { clearInterval(timer); pollTimers.delete(collectionName); }
-  }
-}
-
 export function useRealtimeCollection<T>(collectionName: string) {
-  const [state, setState] = useState<CollectionState<T>>(
-    () => store.get(collectionName) || { data: [], connected: false }
-  );
+  const [data, setData] = useState<T[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!store.has(collectionName)) {
-      store.set(collectionName, { data: [], connected: false, error: '' });
-    }
+    let cancelled = false;
+    console.log(`FIREBASE: useRealtimeCollection mount ${collectionName}`);
 
-    const unsubStore = subscribe(collectionName, () => {
-      setState({ ...(store.get(collectionName) as CollectionState<T>) });
-    });
+    getDocs<T>(collectionName)
+      .then((docs) => {
+        if (cancelled) return;
+        console.log(`FIREBASE: initial fetch ${collectionName} got ${docs.length} docs`);
+        setData(docs);
+        setConnected(true);
+        setError('');
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        console.error(`FIREBASE: initial fetch ERROR ${collectionName}:`, err);
+        setError(String(err));
+        setConnected(false);
+      });
 
-    startPolling(collectionName);
-
-    const unsubSnapshot = onSnapshot(
+    const unsub = onSnapshot(
       collection(db, collectionName),
       (snapshot) => {
+        if (cancelled) return;
         const docs = snapshotToArray<T>(snapshot);
-        store.set(collectionName, { data: docs, connected: true, error: '' });
-        setState({ data: docs, connected: true });
+        console.log(`FIREBASE: onSnapshot ${collectionName} got ${docs.length} docs`);
+        setData(docs);
+        setConnected(true);
+        setError('');
       },
-      (err) => {
-        console.error(`Firestore onSnapshot error [${collectionName}]:`, err);
+      (err: any) => {
+        if (cancelled) return;
+        console.error(`FIREBASE: onSnapshot ERROR ${collectionName}:`, err);
+        setError(String(err));
+        setConnected(false);
       }
     );
 
     return () => {
-      unsubStore();
-      unsubSnapshot();
-      stopPollingIfEmpty(collectionName);
+      cancelled = true;
+      unsub();
     };
   }, [collectionName]);
 
-  return state;
+  return { data, connected, error };
 }
-
-/* ---------- sync status hook ---------- */
 
 export function useSyncStatus() {
   const [status, setStatus] = useState<'connected' | 'disconnected' | 'syncing'>('syncing');
@@ -133,30 +98,25 @@ export function useSyncStatus() {
 
   useEffect(() => {
     const check = () => {
-      const collections = ['resignations', 'nssf', 'donations', 'users', 'telegramSettings'];
-      const allConnected = collections.every((c) => store.get(c)?.connected);
-      const anyData = collections.some((c) => (store.get(c)?.data.length ?? 0) > 0);
-      const firstErr = collections.map((c) => store.get(c)?.error).find((e) => e && e.length > 0);
-      setError(firstErr || '');
-      if (allConnected) {
-        setStatus('connected');
-        setLastSync(new Date().toLocaleTimeString());
-      } else if (anyData) {
-        setStatus('connected');
-      } else {
-        setStatus('syncing');
+      const state = (window as any).__FIRESTORE_ERRORS;
+      if (state && state.length > 0) {
+        setError(state[state.length - 1]);
       }
     };
     check();
-    const interval = setInterval(check, 3000);
+    const interval = setInterval(check, 2000);
     return () => clearInterval(interval);
   }, []);
 
   return { status, lastSync, error };
 }
 
-/* ---------- force re-fetch ---------- */
-
-export function refetchCollection(collectionName: string): Promise<void> {
-  return fetchAndSet(collectionName);
+export async function refetchCollection(collectionName: string): Promise<void> {
+  console.log(`FIREBASE: refetchCollection ${collectionName}`);
+  try {
+    const docs = await getDocs(collectionName);
+    console.log(`FIREBASE: refetchCollection ${collectionName} got ${docs.length} docs`);
+  } catch (err) {
+    console.error(`FIREBASE: refetchCollection error ${collectionName}:`, err);
+  }
 }
