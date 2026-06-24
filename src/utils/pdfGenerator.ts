@@ -93,7 +93,8 @@ export function generatePdfReport({
         margin: { top: 14 },
       });
 
-      doc.save(`Resignations_Report_${new Date().toISOString().split("T")[0]}.pdf`);
+      const resignationsUrl = URL.createObjectURL(doc.output('blob'));
+      window.open(resignationsUrl, '_blank');
       onAddToast(`PDF resignation report compile completed: ${data.length} records.`, "success");
 
     } else if (type === "nssf") {
@@ -145,7 +146,8 @@ export function generatePdfReport({
         margin: { top: 14 },
       });
 
-      doc.save(`NSSF_Payments_Report_${new Date().toISOString().split("T")[0]}.pdf`);
+      const nssfUrl = URL.createObjectURL(doc.output('blob'));
+      window.open(nssfUrl, '_blank');
       onAddToast(`NSSF report compiled completely.`, "success");
 
     } else if (type === "donation") {
@@ -185,7 +187,8 @@ export function generatePdfReport({
         margin: { top: 14 },
       });
 
-      doc.save(`Staff_Donations_Report_${new Date().toISOString().split("T")[0]}.pdf`);
+      const donationsUrl = URL.createObjectURL(doc.output('blob'));
+      window.open(donationsUrl, '_blank');
       onAddToast(`Donations aggregate audit compiled successfully.`, "success");
     }
   } catch (err) {
