@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   collection,
   doc,
@@ -18,49 +18,50 @@ function snapshotToArray<T>(snapshot: any): (T & { id: string })[] {
   return arr;
 }
 
+/* ---------- last error for UI display ---------- */
+let _lastError = '';
+export function getLastError() { return _lastError; }
+function setLastError(msg: string) { _lastError = msg; }
+
+/* ---------- public CRUD API ---------- */
+
 export async function setDoc(collectionName: string, id: string, data: unknown): Promise<void> {
-  console.log(`FIREBASE: setDoc ${collectionName}/${id}`, data);
   await fsSetDoc(doc(db, collectionName, id), {
     ...(data as Record<string, unknown>),
     timestamp: Timestamp.now().toMillis(),
   });
-  console.log(`FIREBASE: setDoc ${collectionName}/${id} SUCCESS`);
 }
 
 export async function getDocs<T>(collectionName: string): Promise<(T & { id: string })[]> {
-  console.log(`FIREBASE: getDocs ${collectionName}`);
-  const snapshot = await fsGetDocs(collection(db, collectionName), { source: 'server' });
-  const result = snapshotToArray<T>(snapshot);
-  console.log(`FIREBASE: getDocs ${collectionName} returned ${result.length} docs`);
-  return result;
+  const snapshot = await fsGetDocs(collection(db, collectionName));
+  return snapshotToArray<T>(snapshot);
 }
 
 export async function deleteDoc(collectionName: string, id: string): Promise<void> {
-  console.log(`FIREBASE: deleteDoc ${collectionName}/${id}`);
   await fsDeleteDoc(doc(db, collectionName, id));
 }
+
+/* ---------- reactive collection hook ---------- */
 
 export function useRealtimeCollection<T>(collectionName: string) {
   const [data, setData] = useState<T[]>([]);
   const [connected, setConnected] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    console.log(`FIREBASE: useRealtimeCollection mount ${collectionName}`);
 
     getDocs<T>(collectionName)
       .then((docs) => {
         if (cancelled) return;
-        console.log(`FIREBASE: initial fetch ${collectionName} got ${docs.length} docs`);
         setData(docs);
         setConnected(true);
-        setError('');
+        setLastError('');
       })
       .catch((err: any) => {
         if (cancelled) return;
-        console.error(`FIREBASE: initial fetch ERROR ${collectionName}:`, err);
-        setError(String(err));
+        const msg = String(err?.message || err);
+        console.error(`Firestore error [${collectionName}]:`, err);
+        setLastError(msg);
         setConnected(false);
       });
 
@@ -69,27 +70,26 @@ export function useRealtimeCollection<T>(collectionName: string) {
       (snapshot) => {
         if (cancelled) return;
         const docs = snapshotToArray<T>(snapshot);
-        console.log(`FIREBASE: onSnapshot ${collectionName} got ${docs.length} docs`);
         setData(docs);
         setConnected(true);
-        setError('');
+        setLastError('');
       },
       (err: any) => {
         if (cancelled) return;
-        console.error(`FIREBASE: onSnapshot ERROR ${collectionName}:`, err);
-        setError(String(err));
+        const msg = String(err?.message || err);
+        console.error(`Firestore snapshot error [${collectionName}]:`, err);
+        setLastError(msg);
         setConnected(false);
       }
     );
 
-    return () => {
-      cancelled = true;
-      unsub();
-    };
+    return () => { cancelled = true; unsub(); };
   }, [collectionName]);
 
-  return { data, connected, error };
+  return { data, connected };
 }
+
+/* ---------- sync status hook ---------- */
 
 export function useSyncStatus() {
   const [status, setStatus] = useState<'connected' | 'disconnected' | 'syncing'>('syncing');
@@ -98,25 +98,30 @@ export function useSyncStatus() {
 
   useEffect(() => {
     const check = () => {
-      const state = (window as any).__FIRESTORE_ERRORS;
-      if (state && state.length > 0) {
-        setError(state[state.length - 1]);
+      const err = getLastError();
+      setError(err);
+      if (err) {
+        setStatus('disconnected');
       }
+      setLastSync(new Date().toLocaleTimeString());
     };
     check();
-    const interval = setInterval(check, 2000);
+    const interval = setInterval(check, 3000);
     return () => clearInterval(interval);
   }, []);
 
   return { status, lastSync, error };
 }
 
+/* ---------- force re-fetch ---------- */
+
 export async function refetchCollection(collectionName: string): Promise<void> {
-  console.log(`FIREBASE: refetchCollection ${collectionName}`);
   try {
     const docs = await getDocs(collectionName);
-    console.log(`FIREBASE: refetchCollection ${collectionName} got ${docs.length} docs`);
-  } catch (err) {
-    console.error(`FIREBASE: refetchCollection error ${collectionName}:`, err);
+    setLastError('');
+  } catch (err: any) {
+    const msg = String(err?.message || err);
+    console.error(`Firestore refetch error [${collectionName}]:`, err);
+    setLastError(msg);
   }
 }
