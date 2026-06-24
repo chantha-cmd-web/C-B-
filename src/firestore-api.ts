@@ -1,58 +1,24 @@
 import { useState, useEffect } from 'react';
 import {
+  collection,
   doc,
+  onSnapshot,
+  getDocs as fsGetDocs,
   setDoc as fsSetDoc,
   deleteDoc as fsDeleteDoc,
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
-const PROJECT_ID = 'project-0b4113c8-b2dc-4744-aea';
-const API_KEY = 'AIzaSyC_SjrFs-PvlTYpiOgI3Spl4FpRz36zD5M';
-const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-
-/* ---------- REST API helpers (direct HTTP fetch, no SDK) ---------- */
-
-function decodeFields(fields: any): any {
-  if (!fields) return {};
-  const obj: any = {};
-  for (const key of Object.keys(fields)) {
-    obj[key] = decodeValue(fields[key]);
-  }
-  return obj;
+function snapshotToArray<T>(snapshot: any): (T & { id: string })[] {
+  const arr: (T & { id: string })[] = [];
+  snapshot.forEach((d: any) => {
+    arr.push({ id: d.id, ...d.data() } as T & { id: string });
+  });
+  return arr;
 }
 
-function decodeValue(value: any): any {
-  if (value === null || value === undefined) return null;
-  if (value.stringValue !== undefined) return value.stringValue;
-  if (value.integerValue !== undefined) return Number(value.integerValue);
-  if (value.doubleValue !== undefined) return value.doubleValue;
-  if (value.booleanValue !== undefined) return value.booleanValue;
-  if (value.nullValue !== null && value.nullValue !== undefined) return null;
-  if (value.timestampValue) return value.timestampValue;
-  if (value.mapValue?.fields) return decodeFields(value.mapValue.fields);
-  if (value.arrayValue?.values) return value.arrayValue.values.map(decodeValue);
-  return null;
-}
-
-function extractId(name: string): string {
-  const parts = name.split('/');
-  return parts[parts.length - 1];
-}
-
-function docToObject(doc: any): any {
-  return { id: extractId(doc.name), ...decodeFields(doc.fields) };
-}
-
-async function restGet<T>(collectionName: string): Promise<(T & { id: string })[]> {
-  const url = `${BASE}/${collectionName}?key=${API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`REST GET ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return (data.documents || []).map(docToObject);
-}
-
-/* ---------- public CRUD API (uses Firestore SDK for writes) ---------- */
+/* ---------- public CRUD API ---------- */
 
 export async function setDoc(collectionName: string, id: string, data: unknown): Promise<void> {
   await fsSetDoc(doc(db, collectionName, id), {
@@ -62,14 +28,15 @@ export async function setDoc(collectionName: string, id: string, data: unknown):
 }
 
 export async function getDocs<T>(collectionName: string): Promise<(T & { id: string })[]> {
-  return restGet<T>(collectionName);
+  const snapshot = await fsGetDocs(collection(db, collectionName), { source: 'server' });
+  return snapshotToArray<T>(snapshot);
 }
 
 export async function deleteDoc(collectionName: string, id: string): Promise<void> {
   await fsDeleteDoc(doc(db, collectionName, id));
 }
 
-/* ---------- reactive collection hook with shared polling via REST ---------- */
+/* ---------- reactive collection hook with shared polling ---------- */
 
 type CollectionState<T> = { data: T[]; connected: boolean };
 
@@ -94,10 +61,10 @@ function subscribe(collectionName: string, fn: () => void) {
 
 async function fetchAndSet(collectionName: string) {
   try {
-    const docs = await restGet(collectionName);
+    const docs = await getDocs(collectionName);
     store.set(collectionName, { data: docs, connected: true });
   } catch (err) {
-    console.error(`Firestore REST fetch error [${collectionName}]:`, err);
+    console.error(`Firestore fetch error [${collectionName}]:`, err);
     const existing = store.get(collectionName);
     store.set(collectionName, { data: existing?.data || [], connected: false });
   }
@@ -134,8 +101,21 @@ export function useRealtimeCollection<T>(collectionName: string) {
 
     startPolling(collectionName);
 
+    const unsubSnapshot = onSnapshot(
+      collection(db, collectionName),
+      (snapshot) => {
+        const docs = snapshotToArray<T>(snapshot);
+        store.set(collectionName, { data: docs, connected: true });
+        setState({ data: docs, connected: true });
+      },
+      (err) => {
+        console.error(`Firestore onSnapshot error [${collectionName}]:`, err);
+      }
+    );
+
     return () => {
       unsubStore();
+      unsubSnapshot();
       stopPollingIfEmpty(collectionName);
     };
   }, [collectionName]);
