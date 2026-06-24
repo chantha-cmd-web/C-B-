@@ -21,7 +21,11 @@ function snapshotToArray<T>(snapshot: any): (T & { id: string })[] {
 /* ---------- last error for UI display ---------- */
 let _lastError = '';
 export function getLastError() { return _lastError; }
-function setLastError(msg: string) { _lastError = msg; }
+export function getLastErrorDebug() { return { _lastError }; }
+function setLastError(msg: string) {
+  _lastError = msg;
+  (window as any).__FIRESTORE_LAST_ERROR = msg;
+}
 
 /* ---------- public CRUD API ---------- */
 
@@ -53,15 +57,16 @@ export function useRealtimeCollection<T>(collectionName: string) {
     getDocs<T>(collectionName)
       .then((docs) => {
         if (cancelled) return;
+        console.log(`FIRESTORE_OK [${collectionName}]: ${docs.length} docs`);
         setData(docs);
         setConnected(true);
         setLastError('');
       })
       .catch((err: any) => {
         if (cancelled) return;
-        const msg = String(err?.message || err);
-        console.error(`Firestore error [${collectionName}]:`, err);
-        setLastError(msg);
+        const msg = err?.message || err?.code || String(err);
+        console.error(`FIRESTORE_ERR [${collectionName}] (msg=${msg}):`, err);
+        setLastError(`[${collectionName}] ${msg}`);
         setConnected(false);
       });
 
@@ -76,9 +81,9 @@ export function useRealtimeCollection<T>(collectionName: string) {
       },
       (err: any) => {
         if (cancelled) return;
-        const msg = String(err?.message || err);
-        console.error(`Firestore snapshot error [${collectionName}]:`, err);
-        setLastError(msg);
+        const msg = err?.message || err?.code || String(err);
+        console.error(`FIRESTORE_SNAP_ERR [${collectionName}] (msg=${msg}):`, err);
+        setLastError(`[${collectionName}] ${msg}`);
         setConnected(false);
       }
     );
@@ -101,6 +106,7 @@ export function useSyncStatus() {
     const check = () => {
       tick++;
       const err = getLastError();
+      console.log(`SYNC_CHECK tick=${tick} err="${err}"`);
       setError(err);
       if (err) {
         setStatus('disconnected');
@@ -122,10 +128,11 @@ export function useSyncStatus() {
 export async function refetchCollection(collectionName: string): Promise<void> {
   try {
     const docs = await getDocs(collectionName);
+    console.log(`REFETCH_OK [${collectionName}]: ${docs.length} docs`);
     setLastError('');
   } catch (err: any) {
-    const msg = String(err?.message || err);
-    console.error(`Firestore refetch error [${collectionName}]:`, err);
-    setLastError(msg);
+    const msg = err?.message || err?.code || String(err);
+    console.error(`REFETCH_ERR [${collectionName}] (msg=${msg}):`, err);
+    setLastError(`[${collectionName}] ${msg}`);
   }
 }

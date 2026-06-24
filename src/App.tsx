@@ -557,7 +557,17 @@ export default function App() {
               <span className={`relative inline-flex w-2 h-2 rounded-full ${syncStatus === "connected" ? "bg-emerald-500" : syncStatus === "syncing" ? "bg-amber-500" : "bg-rose-500"}`} />
               {syncStatus === "connected" ? "LIVE" : syncStatus === "syncing" ? "SYNCING" : "OFFLINE"}
               {lastSynced && <span className="text-[10px] opacity-60 ml-1 font-normal">{lastSynced}</span>}
-              {firestoreError && <span className="text-[10px] ml-1 text-rose-500 max-w-[300px] truncate" title={firestoreError}>{firestoreError}</span>}
+              <span className="text-[10px] ml-1 text-rose-400 max-w-[350px] truncate" title={firestoreError || "no error"}>
+                {firestoreError ? JSON.stringify(firestoreError) : "—"}
+              </span>
+              <button
+                onClick={() => {
+                  import("./firestore-api").then(m =>
+                    m.getDocs("resignations").then(r => alert(`OK: ${r.length} docs`)).catch(e => alert(`ERR: ${e?.message || e}`))
+                  );
+                }}
+                className="text-[10px] ml-1 px-1.5 py-0.5 rounded border border-rose-300 text-rose-500 hover:bg-rose-50 cursor-pointer"
+              >DBG</button>
             </div>
 
             <button
