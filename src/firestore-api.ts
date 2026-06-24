@@ -97,11 +97,15 @@ export function useSyncStatus() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let tick = 0;
     const check = () => {
+      tick++;
       const err = getLastError();
       setError(err);
       if (err) {
         setStatus('disconnected');
+      } else if (tick > 1) {
+        setStatus('connected');
       }
       setLastSync(new Date().toLocaleTimeString());
     };
