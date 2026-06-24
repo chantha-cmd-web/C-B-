@@ -392,7 +392,13 @@ export default function App() {
   }
 
   return (
-    <div
+    <>
+      {firestoreError && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white text-center text-sm font-bold py-2 px-4 shadow-lg">
+          FIRESTORE ERROR: {JSON.stringify(firestoreError)}
+        </div>
+      )}
+      <div
       id="app-container"
       className="flex h-screen w-screen relative overflow-hidden bg-[#F8F4ED] dark:bg-[#0B1727] font-sans transition-all duration-300"
     >
@@ -734,6 +740,7 @@ export default function App() {
         </div>
       )}
     </div>
+    </>
   );
 }
 
