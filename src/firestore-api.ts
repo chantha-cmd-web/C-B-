@@ -38,7 +38,7 @@ export async function deleteDoc(collectionName: string, id: string): Promise<voi
 
 /* ---------- reactive collection hook with shared polling ---------- */
 
-type CollectionState<T> = { data: T[]; connected: boolean };
+type CollectionState<T> = { data: T[]; connected: boolean; error: string };
 
 const store = new Map<string, CollectionState<any>>();
 const listeners = new Map<string, Set<() => void>>();
@@ -62,11 +62,12 @@ function subscribe(collectionName: string, fn: () => void) {
 async function fetchAndSet(collectionName: string) {
   try {
     const docs = await getDocs(collectionName);
-    store.set(collectionName, { data: docs, connected: true });
+    store.set(collectionName, { data: docs, connected: true, error: '' });
   } catch (err) {
+    const msg = String(err);
     console.error(`Firestore fetch error [${collectionName}]:`, err);
     const existing = store.get(collectionName);
-    store.set(collectionName, { data: existing?.data || [], connected: false });
+    store.set(collectionName, { data: existing?.data || [], connected: false, error: msg });
   }
   notify(collectionName);
 }
@@ -92,7 +93,7 @@ export function useRealtimeCollection<T>(collectionName: string) {
 
   useEffect(() => {
     if (!store.has(collectionName)) {
-      store.set(collectionName, { data: [], connected: false });
+      store.set(collectionName, { data: [], connected: false, error: '' });
     }
 
     const unsubStore = subscribe(collectionName, () => {
@@ -105,7 +106,7 @@ export function useRealtimeCollection<T>(collectionName: string) {
       collection(db, collectionName),
       (snapshot) => {
         const docs = snapshotToArray<T>(snapshot);
-        store.set(collectionName, { data: docs, connected: true });
+        store.set(collectionName, { data: docs, connected: true, error: '' });
         setState({ data: docs, connected: true });
       },
       (err) => {
@@ -128,12 +129,15 @@ export function useRealtimeCollection<T>(collectionName: string) {
 export function useSyncStatus() {
   const [status, setStatus] = useState<'connected' | 'disconnected' | 'syncing'>('syncing');
   const [lastSync, setLastSync] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const check = () => {
       const collections = ['resignations', 'nssf', 'donations', 'users', 'telegramSettings'];
       const allConnected = collections.every((c) => store.get(c)?.connected);
       const anyData = collections.some((c) => (store.get(c)?.data.length ?? 0) > 0);
+      const firstErr = collections.map((c) => store.get(c)?.error).find((e) => e && e.length > 0);
+      setError(firstErr || '');
       if (allConnected) {
         setStatus('connected');
         setLastSync(new Date().toLocaleTimeString());
@@ -148,7 +152,7 @@ export function useSyncStatus() {
     return () => clearInterval(interval);
   }, []);
 
-  return { status, lastSync };
+  return { status, lastSync, error };
 }
 
 /* ---------- force re-fetch ---------- */
