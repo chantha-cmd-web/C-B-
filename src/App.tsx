@@ -557,7 +557,7 @@ export default function App() {
               <span className={`relative inline-flex w-2 h-2 rounded-full ${syncStatus === "connected" ? "bg-emerald-500" : syncStatus === "syncing" ? "bg-amber-500" : "bg-rose-500"}`} />
               {syncStatus === "connected" ? "LIVE" : syncStatus === "syncing" ? "SYNCING" : "OFFLINE"}
               {lastSynced && <span className="text-[10px] opacity-60 ml-1 font-normal">{lastSynced}</span>}
-              {firestoreError && <span className="text-[9px] ml-1 text-rose-500 max-w-[200px] truncate" title={firestoreError}>ERR</span>}
+              {firestoreError && <span className="text-[10px] ml-1 text-rose-500 max-w-[300px] truncate" title={firestoreError}>{firestoreError}</span>}
             </div>
 
             <button
