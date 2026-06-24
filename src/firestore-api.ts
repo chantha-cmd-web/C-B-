@@ -18,13 +18,15 @@ function snapshotToArray<T>(snapshot: any): (T & { id: string })[] {
   return arr;
 }
 
-/* ---------- last error for UI display ---------- */
-let _lastError = '';
-export function getLastError() { return _lastError; }
-export function getLastErrorDebug() { return { _lastError }; }
-function setLastError(msg: string) {
-  _lastError = msg;
-  (window as any).__FIRESTORE_LAST_ERROR = msg;
+/* ---------- per-collection error tracking ---------- */
+const _collectionErrors: Record<string, string> = {};
+export function getAllErrors(): Record<string, string> { return { ..._collectionErrors }; }
+function setColError(coll: string, msg: string) {
+  _collectionErrors[coll] = msg;
+}
+export function getCombinedError(): string {
+  const msgs = Object.values(_collectionErrors).filter(Boolean);
+  return msgs.length > 0 ? msgs.join(' | ') : '';
 }
 
 /* ---------- public CRUD API ---------- */
@@ -60,13 +62,13 @@ export function useRealtimeCollection<T>(collectionName: string) {
         console.log(`FIRESTORE_OK [${collectionName}]: ${docs.length} docs`);
         setData(docs);
         setConnected(true);
-        setLastError('');
+        setColError(collectionName, '');
       })
       .catch((err: any) => {
         if (cancelled) return;
         const msg = err?.message || err?.code || String(err);
-        console.error(`FIRESTORE_ERR [${collectionName}] (msg=${msg}):`, err);
-        setLastError(`[${collectionName}] ${msg}`);
+        console.error(`FIRESTORE_ERR [${collectionName}]`, err);
+        setColError(collectionName, msg);
         setConnected(false);
       });
 
@@ -75,15 +77,16 @@ export function useRealtimeCollection<T>(collectionName: string) {
       (snapshot) => {
         if (cancelled) return;
         const docs = snapshotToArray<T>(snapshot);
+        console.log(`SNAP_OK [${collectionName}]: ${docs.length} docs`);
         setData(docs);
         setConnected(true);
-        setLastError('');
+        setColError(collectionName, '');
       },
       (err: any) => {
         if (cancelled) return;
         const msg = err?.message || err?.code || String(err);
-        console.error(`FIRESTORE_SNAP_ERR [${collectionName}] (msg=${msg}):`, err);
-        setLastError(`[${collectionName}] ${msg}`);
+        console.error(`SNAP_ERR [${collectionName}]`, err);
+        setColError(collectionName, msg);
         setConnected(false);
       }
     );
@@ -105,10 +108,9 @@ export function useSyncStatus() {
     let tick = 0;
     const check = () => {
       tick++;
-      const err = getLastError();
-      console.log(`SYNC_CHECK tick=${tick} err="${err}"`);
-      setError(err);
-      if (err) {
+      const combined = getCombinedError();
+      setError(combined);
+      if (combined) {
         setStatus('disconnected');
       } else if (tick > 1) {
         setStatus('connected');
@@ -129,10 +131,10 @@ export async function refetchCollection(collectionName: string): Promise<void> {
   try {
     const docs = await getDocs(collectionName);
     console.log(`REFETCH_OK [${collectionName}]: ${docs.length} docs`);
-    setLastError('');
+    setColError(collectionName, '');
   } catch (err: any) {
     const msg = err?.message || err?.code || String(err);
-    console.error(`REFETCH_ERR [${collectionName}] (msg=${msg}):`, err);
-    setLastError(`[${collectionName}] ${msg}`);
+    console.error(`REFETCH_ERR [${collectionName}]`, err);
+    setColError(collectionName, msg);
   }
 }
